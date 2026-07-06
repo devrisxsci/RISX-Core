@@ -18,6 +18,7 @@ import {
 import { buildClinicalResult, sealAuditObject } from "./auditReplay.js";
 import { sha256Hex } from "./hash.js";
 import type { AuditObject, ClinicalResult, ExecutionContext, TypedConfidence } from "./types.js";
+import { computeContentHash } from "@risx/common";
 
 /**
  * Analytics Runtime (Computational Core architecture, Section 7: "the
@@ -87,9 +88,6 @@ export class AnalyticsRuntime {
 
     // Phase ADMIT
     const canonicalInputs = admitCanonicalInputs(inputs.canonicalInputs);
-    const canonicalInputFingerprint = sha256Hex(
-      [...canonicalInputs.entries()].sort(([a], [b]) => a.localeCompare(b))
-    );
 
     // Phase PIN
     const evidence = EvidenceQueryLayer.pin(ALL_FIXTURE_PACKAGES);
@@ -148,7 +146,7 @@ export class AnalyticsRuntime {
     const audit = sealAuditObject({
       moduleSet,
       evidenceSnapshot,
-      canonicalInputFingerprint,
+      canonicalInputs: [...canonicalInputs.entries()],
       executionDag: plan.map((p) => ({ moduleId: p.moduleId, dependsOn: p.dependsOn })),
       executionContext,
       recommendation: recommendationGeneration.recommendation,
@@ -157,20 +155,21 @@ export class AnalyticsRuntime {
     void resolvedConflicts;
 
     const evidenceRefs = [
-      staging.ajccPackageContentHash,
-      biomarker.biomarkerDefinitionsContentHash,
-      guidelineMatching.nccnPackageContentHash,
-      regimenSelection.fdaLabelsPackageContentHash
+      staging.ajccPackageContentHash.digest,
+      biomarker.biomarkerDefinitionsContentHash.digest,
+      guidelineMatching.nccnPackageContentHash.digest,
+      regimenSelection.fdaLabelsPackageContentHash.digest
     ];
 
     const clinicalResult = buildClinicalResult({
-      id: sha256Hex({ audit: audit.auditId, kind: "ClinicalResult" }),
+      id: sha256Hex({ audit: audit.id, kind: "ClinicalResult" }),
       audit,
       recommendation: recommendationGeneration.recommendation,
       aggregateConfidence,
       warnings,
       canonicalObjectIds: [...canonicalInputs.keys()],
-      evidenceRefs
+      evidenceRefs,
+      evidencePackages: evidenceSnapshot.packages
     });
 
     return { clinicalResult, audit };

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AnalyticsRuntime } from "../src/analyticsRuntime.js";
 import { verifyReplay, ReplayDivergenceError } from "../src/auditReplay.js";
-import { sha256Hex } from "../src/hash.js";
 import { BASE_EXECUTION_CONTEXT, egfrPositiveStageIVInputs } from "./fixtures.js";
 import { admitCanonicalInputs, CanonicalInputRejectedError } from "../src/canonicalInputGateway.js";
 import { StagingValidationError } from "../src/modules/staging.js";
@@ -24,7 +23,7 @@ describe("Analytics Runtime — end-to-end NSCLC clinical reasoning (Phase P2 Me
       "regimen-selection-module",
       "recommendation-generation-module"
     ]);
-    expect(audit.evidenceSnapshot.packages.map((p) => p.packageId).sort()).toEqual(
+    expect(audit.evidenceSnapshot.map((p) => p.packageId).sort()).toEqual(
       ["ajcc-staging-manual", "biomarker-definitions", "fda-drug-labels-nsclc", "nccn-nsclc-guidelines"].sort()
     );
     expect(audit.resolvedConflicts).toHaveLength(0);
@@ -82,8 +81,8 @@ describe("Analytics Runtime — end-to-end NSCLC clinical reasoning (Phase P2 Me
     const runtime = new AnalyticsRuntime();
     const first = runtime.execute({ canonicalInputs: egfrPositiveStageIVInputs(), executionContext: BASE_EXECUTION_CONTEXT });
     const second = runtime.execute({ canonicalInputs: egfrPositiveStageIVInputs(), executionContext: BASE_EXECUTION_CONTEXT });
-    expect(first.audit.resultHash).toBe(second.audit.resultHash);
-    expect(first.audit.confidenceHash).toBe(second.audit.confidenceHash);
+    expect(first.audit.resultHashes.recommendationHash.digest).toBe(second.audit.resultHashes.recommendationHash.digest);
+    expect(first.audit.resultHashes.confidenceHash.digest).toBe(second.audit.resultHashes.confidenceHash.digest);
   });
 });
 
@@ -100,18 +99,14 @@ describe("Audit & Replay Subsystem — deterministic replay (GR-28, GR-29, Secti
     const replayRuntime = new AnalyticsRuntime();
     const replayed = replayRuntime.execute({ canonicalInputs: inputs, executionContext: BASE_EXECUTION_CONTEXT });
 
-    const recomputedFingerprint = sha256Hex(
-      [...admitForFingerprint(inputs)].sort(([a], [b]) => a.localeCompare(b))
-    );
-
     const result = verifyReplay(audit, {
-      canonicalInputFingerprint: recomputedFingerprint,
+      canonicalInputs: admitForFingerprint(inputs),
       recommendation: replayed.clinicalResult.recommendation,
       aggregateConfidence: replayed.clinicalResult.confidence
     });
 
     expect(result.identical).toBe(true);
-    expect(replayed.audit.resultHash).toBe(audit.resultHash);
+    expect(replayed.audit.resultHashes.recommendationHash.digest).toBe(audit.resultHashes.recommendationHash.digest);
     expect(replayed.clinicalResult.recommendation).toEqual(clinicalResult.recommendation);
   });
 
@@ -127,7 +122,7 @@ describe("Audit & Replay Subsystem — deterministic replay (GR-28, GR-29, Secti
 
     expect(() =>
       verifyReplay(audit, {
-        canonicalInputFingerprint: audit.canonicalInputFingerprint,
+        canonicalInputs: admitForFingerprint(egfrPositiveStageIVInputs()),
         recommendation: divergentRecommendation,
         aggregateConfidence: {
           evidenceStrength: 0,
@@ -144,7 +139,9 @@ describe("Audit & Replay Subsystem — deterministic replay (GR-28, GR-29, Secti
 // Mirrors AnalyticsRuntime's internal ADMIT-phase fingerprint derivation so
 // the test can independently recompute a fingerprint from raw inputs, the
 // way an external replay caller (e.g. Studio) would.
-function admitForFingerprint(inputs: ReturnType<typeof egfrPositiveStageIVInputs>) {
+function admitForFingerprint(
+  inputs: ReturnType<typeof egfrPositiveStageIVInputs>
+): ReadonlyArray<readonly [string, unknown]> {
   const admitted = admitCanonicalInputs(inputs);
-  return admitted.entries();
+  return [...admitted.entries()];
 }

@@ -1,35 +1,30 @@
 /**
- * RISX-Core — Provisional local types (Phase P2, Mechanical Spine).
+ * RISX-Core — types (Phase P2, Mechanical Spine).
  *
- * IMPORTANT — PROVISIONAL SCOPE NOTE (read before extending):
- * ADR-0001 (RISX-Architecture) records that no repository has yet been approved
- * to own the schema for domain-specific Canonical Objects, and ADR-0002 records
- * that the aggregate-confidence computation rule is still open. Both are STOP-and-
- * ADR items in the governing architecture, not decisions this implementation may
- * make on the platform's behalf.
+ * STAGE C SCOPE NOTE (revised, PO-approved):
+ * `devrisxsci/RISX-Common` v2.0 is now consumed for exactly three
+ * unentangled surfaces: `AuditObject`, `EvidencePackageManifest`, and
+ * `IntendedUse` (imported below from "@risx/common"). These three surfaces
+ * were confirmed to have no dependency on `TypedConfidence` and were
+ * verified structurally compatible with what this Mechanical Spine
+ * implementation and the NSCLC Knowledge Slice v1.1 require.
  *
- * `devrisxsci/RISX-Common` DOES exist and DOES ratify (under IA-001A) shared
- * `TypedConfidence` / `AuditObject` / `ClinicalResult` / `RecommendationObject`
- * contracts that RISX-Core is architecturally required to depend on instead of
- * defining its own. Those ratified contracts were inspected during this
- * implementation and found to be structurally incompatible with what the
- * Computational Core architecture and the NSCLC Knowledge Slice v1.1 require
- * for this exact use case — see docs/ARCHITECTURAL_ISSUES.md, finding 3, for
- * the field-by-field conflict (single-scalar vs. four-dimension confidence;
- * generic action-log vs. execution-sealing audit object; no sanctioned place
- * for a domain payload on the shared result envelopes). Importing them as-is
- * would silently pick a winner between two ratified-but-conflicting
- * specifications, which this implementation is not authorized to do.
- *
- * Everything in this file is therefore a LOCAL, PROVISIONAL representation,
- * scoped only to exercising the RISX-Core Mechanical Spine end-to-end for the
- * NSCLC Enterprise Knowledge Slice. None of it claims to be the RISX-Common
- * contract, and none of it proposes to override RISX-Common. Once an ADR
- * reconciles the conflict described above (and, separately, once ADR-0001
- * resolves domain-specific Canonical Object ownership), these types should be
- * replaced by imports from RISX-Common, not extended in place. This is
- * documented, not silent, per IA-003's Stop Conditions.
+ * `ClinicalResult`, `RecommendationObject`, `TypedConfidence`, and
+ * `ModuleDefinition` remain LOCAL, PROVISIONAL types below and are HELD
+ * pending ADRs: RISX-Common's `ClinicalResult`/`RecommendationObject` are
+ * built on `ModuleResultBaseSchema`, which requires a `TypedConfidence`
+ * field that is not itself isolatable from those two result envelopes
+ * without also resolving the same single-scalar-vs-four-dimension
+ * confidence conflict recorded in the prior stage's findings. That
+ * dependency is not touched in this stage — see docs/ARCHITECTURAL_ISSUES.md,
+ * finding 3, for the original field-by-field analysis (still applicable to
+ * these four held types), and the Stage C commit message for exactly which
+ * types are held and why.
  */
+
+import type { AuditObject, EvidencePackageManifest, IntendedUse } from "@risx/common";
+
+export type { AuditObject, EvidencePackageManifest, IntendedUse };
 
 // ---------------------------------------------------------------------------
 // RISX Canonical Object envelope (provisional — see file header)
@@ -42,10 +37,11 @@ export interface CanonicalObjectEnvelope<TPayload = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Typed confidence (RISX-Common concept, Section 26 of the Computational Core
-// architecture) — dimensions are structural per the governing architecture;
-// the aggregation RULE across dimensions is intentionally left as the simplest
-// documented, versioned, and provisional rule pending ADR-0002.
+// Typed confidence (HELD — see file header). RISX-Common concept, Section 26
+// of the Computational Core architecture) — dimensions are structural per
+// the governing architecture; the aggregation RULE across dimensions is
+// intentionally left as the simplest documented, versioned, and provisional
+// rule pending ADR-0002.
 // ---------------------------------------------------------------------------
 
 export interface TypedConfidence {
@@ -59,6 +55,8 @@ export interface TypedConfidence {
 // ---------------------------------------------------------------------------
 // Execution context (Section 5.2) — every value that could otherwise vary
 // between two identical executions is carried explicitly here.
+// `intendedUsePosture` is now typed against @risx/common's `IntendedUse`
+// (one of the three consumed surfaces).
 // ---------------------------------------------------------------------------
 
 export interface ExecutionContext {
@@ -67,24 +65,23 @@ export interface ExecutionContext {
   readonly tenantId: string;
   readonly precedencePolicyVersion: string;
   readonly confidencePolicyVersion: string;
-  readonly intendedUsePosture: string;
+  readonly intendedUsePosture: IntendedUse;
 }
 
 // ---------------------------------------------------------------------------
-// Evidence Package manifest (Evidence Package Specification, Sections 14-19)
-// — simplified to the fields RISX-Core needs to pin and cite a package. There
-// is no Knowledge Compiler or digital signature authority in this phase, so
-// packages here are fixtures with a real content hash but no signature chain;
-// this is documented as a Phase P2 simplification, not a claim of full EP-13
-// conformance (which requires a trusted publisher that does not exist yet).
+// Evidence Package (Evidence Package Specification, Sections 14-19) — the
+// manifest shape is now @risx/common's `EvidencePackageManifest` (one of the
+// three consumed surfaces). There is still no Knowledge Compiler or digital
+// signature authority in this phase, so packages here are fixtures with a
+// real hash tree but a placeholder signature; this is documented as a Phase
+// P2 simplification, not a claim of full EP-13 conformance (which requires a
+// trusted publisher that does not exist yet).
+//
+// `source` is a Core-local field describing the fixture's provenance (e.g.
+// "AJCC/UICC"). It is NOT part of the @risx/common `EvidencePackageManifest`
+// schema (which has no such field), so it is carried on the Core-local
+// `EvidencePackage` wrapper instead of being smuggled into the manifest.
 // ---------------------------------------------------------------------------
-
-export interface EvidencePackageManifest {
-  readonly packageId: string;
-  readonly version: string;
-  readonly source: string;
-  readonly contentHash: string;
-}
 
 export interface EvidenceAssertion<TClaim = unknown> {
   readonly assertionId: string;
@@ -95,6 +92,7 @@ export interface EvidenceAssertion<TClaim = unknown> {
 
 export interface EvidencePackage<TClaim = unknown> {
   readonly manifest: EvidencePackageManifest;
+  readonly source: string;
   readonly assertions: ReadonlyArray<EvidenceAssertion<TClaim>>;
 }
 
@@ -109,6 +107,10 @@ export interface EvidenceSnapshot {
 // Phase P2 implements only the Clinical domain in one repository. Crossing a
 // real wire boundary is not required to prove the mechanical spine and is not
 // introduced here (see docs/PHASE_P2_SCOPE.md).
+//
+// `ModuleDefinition` (RISX-Common's manifest for a registered module) is
+// HELD — see file header — so `ModuleRegistration` below remains the local,
+// provisional module contract shape, unchanged from the prior stage.
 // ---------------------------------------------------------------------------
 
 export interface ModuleRegistration<TInputs, TOutput> {
@@ -139,8 +141,15 @@ export interface EvidenceQueryHandle {
 }
 
 // ---------------------------------------------------------------------------
-// Recommendation / Audit envelopes (Sections 27, 34) — provisional local
-// shape of RISX-Common's ClinicalResult / RecommendationObject / AuditObject.
+// Recommendation / Clinical Result envelopes (Sections 27, 34) — HELD, see
+// file header: RISX-Common's `RecommendationObject` and `ClinicalResult` are
+// entangled with `TypedConfidence` via `ModuleResultBaseSchema` and are not
+// isolatable in this stage. These remain the local, provisional shapes,
+// unchanged from the prior stage.
+//
+// `AuditObject` below is no longer defined locally — it is imported from
+// "@risx/common" above (one of the three consumed surfaces) and used
+// directly by `ExecutionResult`.
 // ---------------------------------------------------------------------------
 
 export interface RegimenCandidate {
@@ -156,7 +165,7 @@ export interface RegimenCandidate {
 export interface RecommendationObject {
   readonly recommendationId: string;
   readonly rankedRegimens: ReadonlyArray<RegimenCandidate>;
-  readonly intendedUsePosture: string;
+  readonly intendedUsePosture: IntendedUse;
 }
 
 export interface ClinicalResult {
@@ -171,32 +180,9 @@ export interface ClinicalResult {
   readonly evidenceRefs: ReadonlyArray<string>;
   readonly moduleRefs: ReadonlyArray<{ moduleId: string; version: string }>;
   readonly producedAt: string;
-  readonly intendedUse: string;
+  readonly intendedUse: IntendedUse;
   readonly warnings: ReadonlyArray<string>;
   readonly recommendation: RecommendationObject;
-}
-
-export interface ResolvedConflict {
-  readonly spineKey: string;
-  readonly competitors: ReadonlyArray<string>;
-  readonly precedencePolicyVersion: string;
-  readonly winner: string;
-}
-
-export interface AuditObject {
-  readonly auditId: string;
-  readonly engineVersion: string;
-  readonly moduleSet: ReadonlyArray<{ moduleId: string; version: string }>;
-  readonly evidenceSnapshot: EvidenceSnapshot;
-  readonly canonicalInputFingerprint: string;
-  readonly executionDag: ReadonlyArray<{ moduleId: string; dependsOn: ReadonlyArray<string> }>;
-  readonly precedencePolicyVersion: string;
-  readonly confidencePolicyVersion: string;
-  readonly intendedUsePosture: string;
-  readonly bitemporal: { readonly validTime: string; readonly decisionTime: string };
-  readonly resolvedConflicts: ReadonlyArray<ResolvedConflict>;
-  readonly resultHash: string;
-  readonly confidenceHash: string;
 }
 
 export interface ExecutionResult {

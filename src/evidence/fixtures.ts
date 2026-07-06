@@ -1,5 +1,5 @@
 import type { EvidencePackage } from "../types.js";
-import { sha256Hex } from "../hash.js";
+import { computeContentHash, EvidencePackageManifestSchema, type ContentHash } from "@risx/common";
 
 /**
  * Fixture Evidence Packages for the NSCLC Enterprise Knowledge Slice.
@@ -9,14 +9,29 @@ import { sha256Hex } from "../hash.js";
  * and stored by RISX-Evidence (L5) — neither of which exists yet. Per IA-003
  * scope ("No Integration", "Reasoning only"), RISX-Core does not implement a
  * compiler or a repository; it only implements the Evidence Query Layer's
- * consumption contract against pinned package content. Each fixture package
- * carries a real, verifiable SHA-256 content hash computed over its
- * canonicalized body, so pinning-by-version-and-hash (GR-15/GR-16) and
- * hash-verification-on-replay (EP-45) are genuinely exercised, not
- * simulated. There is no digital signature chain, because there is no
- * Knowledge Compiler to be the trusted signer (EP-13) — this is a documented
- * Phase P2 simplification, not a claim of full Evidence Package conformance.
+ * consumption contract against pinned package content.
+ *
+ * STAGE C: each fixture's manifest is now @risx/common's v2.0
+ * `EvidencePackageManifest` (one of the three consumed surfaces), which
+ * requires a full hash TREE (EPS §15/Fig 15.1/EP-10) rather than the prior
+ * stage's single flat `contentHash`: a hash of the HEADER, a hash of the
+ * METADATA, a hash for the BODY (the assertions), a manifest hash rolling
+ * all of those up, and a signature over the manifest hash. `compilerId` /
+ * `compilerVersion` / `signature` are Phase P2 fixture placeholders — there
+ * is still no real Knowledge Compiler to be the trusted signer (EP-13), so
+ * this remains a documented Phase P2 simplification, not a claim of full
+ * Evidence Package conformance. `compatibleWith` is pinned to `["1.0.0"]`
+ * (Architecture Release 1.0, the release this fixture set targets).
+ *
+ * `source` (the fixture's publishing body, e.g. "AJCC/UICC") has no home on
+ * the @risx/common manifest, so it is carried on the Core-local
+ * `EvidencePackage` wrapper instead (see types.ts).
  */
+
+const FIXTURE_COMPILER_ID = "risx-core-phase-p2-fixture-compiler";
+const FIXTURE_COMPILER_VERSION = "0.1.0";
+const FIXTURE_CREATED_AT = "2026-01-01T00:00:00.000Z";
+const FIXTURE_COMPATIBLE_WITH = ["1.0.0"];
 
 function buildPackage<TClaim>(
   packageId: string,
@@ -24,11 +39,55 @@ function buildPackage<TClaim>(
   source: string,
   assertions: EvidencePackage<TClaim>["assertions"]
 ): EvidencePackage<TClaim> {
-  const contentHash = sha256Hex({ packageId, version, source, assertions });
-  return {
-    manifest: { packageId, version, source, contentHash },
-    assertions
+  const headerHash: ContentHash = computeContentHash({ packageId, version, source });
+  const metadataHash: ContentHash = computeContentHash({
+    compilerId: FIXTURE_COMPILER_ID,
+    compilerVersion: FIXTURE_COMPILER_VERSION,
+    createdAt: FIXTURE_CREATED_AT,
+    compatibleWith: FIXTURE_COMPATIBLE_WITH
+  });
+  const bodyHashes: ContentHash[] = [computeContentHash(assertions)];
+  const supportingResourceHashes: ContentHash[] = [];
+  const manifestHash: ContentHash = computeContentHash({
+    packageId,
+    version,
+    compilerId: FIXTURE_COMPILER_ID,
+    compilerVersion: FIXTURE_COMPILER_VERSION,
+    headerHash,
+    metadataHash,
+    bodyHashes,
+    supportingResourceHashes,
+    compatibleWith: FIXTURE_COMPATIBLE_WITH,
+    createdAt: FIXTURE_CREATED_AT
+  });
+  // Phase P2 placeholder signature: there is no Knowledge Compiler yet to be
+  // the trusted signer (EP-13); `value` is a deterministic stand-in derived
+  // from the manifest hash so the field is populated, not faked as trust.
+  const signature = {
+    signedBy: FIXTURE_COMPILER_ID,
+    value: computeContentHash({ manifestHash, signedBy: FIXTURE_COMPILER_ID }).digest
   };
+
+  const manifest = EvidencePackageManifestSchema.parse({
+    objectType: "EvidencePackageManifest",
+    packageKind: "evidence",
+    packageId,
+    version,
+    compilerId: FIXTURE_COMPILER_ID,
+    compilerVersion: FIXTURE_COMPILER_VERSION,
+    headerHash,
+    metadataHash,
+    bodyHashes,
+    supportingResourceHashes,
+    manifestHash,
+    signature,
+    compatibleWith: FIXTURE_COMPATIBLE_WITH,
+    createdAt: FIXTURE_CREATED_AT,
+    evidenceObjectIds: assertions.map((a) => a.assertionId),
+    provenancePointers: []
+  });
+
+  return { manifest, source, assertions };
 }
 
 export interface AjccStageClaim {
@@ -40,7 +99,7 @@ export interface AjccStageClaim {
 
 export const AJCC_STAGING_MANUAL = buildPackage<AjccStageClaim>(
   "ajcc-staging-manual",
-  "AJCC-8th-Edition",
+  "8.0.0+AJCC-8th-Edition",
   "AJCC/UICC",
   [
     {
@@ -67,7 +126,7 @@ export interface BiomarkerDefinitionClaim {
 
 export const BIOMARKER_DEFINITIONS = buildPackage<BiomarkerDefinitionClaim>(
   "biomarker-definitions",
-  "2026.1",
+  "2026.1.0",
   "Biomarker Definitions Curators",
   [
     {
@@ -105,7 +164,7 @@ export interface NccnDecisionPointClaim {
 
 export const NCCN_NSCLC_GUIDELINES = buildPackage<NccnDecisionPointClaim>(
   "nccn-nsclc-guidelines",
-  "NCCN-NSCLC-v2026.3",
+  "2026.3.0+NCCN-NSCLC",
   "National Comprehensive Cancer Network",
   [
     {
@@ -156,7 +215,7 @@ export interface FdaLabelContraindicationClaim {
 
 export const FDA_DRUG_LABELS = buildPackage<FdaLabelContraindicationClaim>(
   "fda-drug-labels-nsclc",
-  "FDA-Labels-2026-05",
+  "2026.5.0+FDA-Labels-2026-05",
   "U.S. Food and Drug Administration",
   [
     {

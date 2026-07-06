@@ -8,7 +8,7 @@ describe("Evidence Query Layer", () => {
     const snapshot = layer.snapshot();
     expect(snapshot.packages).toHaveLength(ALL_FIXTURE_PACKAGES.length);
     const nccn = snapshot.packages.find((p) => p.packageId === "nccn-nsclc-guidelines");
-    expect(nccn?.contentHash).toBe(NCCN_NSCLC_GUIDELINES.manifest.contentHash);
+    expect(nccn?.manifestHash.digest).toBe(NCCN_NSCLC_GUIDELINES.manifest.manifestHash.digest);
   });
 
   it("throws when a module queries a package that was not pinned", () => {
@@ -27,10 +27,11 @@ describe("Evidence Query Layer", () => {
 
   it("computed content hash changes if package content changes (tamper evidence, EP-12)", () => {
     const layer = EvidenceQueryLayer.pin(ALL_FIXTURE_PACKAGES);
-    const original = layer.packageManifest("nccn-nsclc-guidelines").contentHash;
+    const original = layer.packageManifest("nccn-nsclc-guidelines").manifestHash.digest;
     const tampered = EvidenceQueryLayer.pin([
       {
         manifest: { ...NCCN_NSCLC_GUIDELINES.manifest },
+        source: NCCN_NSCLC_GUIDELINES.source,
         assertions: [...NCCN_NSCLC_GUIDELINES.assertions, NCCN_NSCLC_GUIDELINES.assertions[0]!]
       }
     ]);
@@ -39,7 +40,7 @@ describe("Evidence Query Layer", () => {
     // property the real Knowledge Compiler must guarantee: identical content
     // hashes identically, and this fixture's hash was computed from its
     // original assertion list, not the tampered one.
-    expect(original).toBe(NCCN_NSCLC_GUIDELINES.manifest.contentHash);
-    expect(tampered.packageManifest("nccn-nsclc-guidelines").contentHash).toBe(original);
+    expect(original).toBe(NCCN_NSCLC_GUIDELINES.manifest.manifestHash.digest);
+    expect(tampered.packageManifest("nccn-nsclc-guidelines").manifestHash.digest).toBe(original);
   });
 });

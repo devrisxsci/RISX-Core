@@ -1,6 +1,7 @@
 import type { ModuleRegistration, ModuleRunContext } from "../types.js";
 import type { FdaLabelContraindicationClaim } from "../evidence/fixtures.js";
 import type { GuidelineMatchingOutput } from "./guidelineMatching.js";
+import type { ContentHash } from "@risx/common";
 
 /**
  * Regimen Selection Module — NSCLC Knowledge Slice v1.1, Section 6.4.
@@ -34,7 +35,7 @@ export interface RegimenSelectionOutput {
   readonly rankedRegimens: ReadonlyArray<RankedRegimen>;
   readonly contraindicationEvaluations: ReadonlyArray<ContraindicationEvaluation>;
   readonly fdaLabelsPackageVersion: string;
-  readonly fdaLabelsPackageContentHash: string;
+  readonly fdaLabelsPackageContentHash: ContentHash;
 }
 
 function nextLineOfTherapyOrdinal(ctx: ModuleRunContext): number {
@@ -113,7 +114,7 @@ export function runRegimenSelectionModule(ctx: ModuleRunContext): RegimenSelecti
     rankedRegimens,
     contraindicationEvaluations,
     fdaLabelsPackageVersion: manifest.version,
-    fdaLabelsPackageContentHash: manifest.contentHash
+    fdaLabelsPackageContentHash: manifest.manifestHash
   };
 }
 

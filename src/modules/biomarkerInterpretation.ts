@@ -1,5 +1,6 @@
 import type { ModuleRegistration, ModuleRunContext } from "../types.js";
 import type { BiomarkerDefinitionClaim } from "../evidence/fixtures.js";
+import type { ContentHash } from "@risx/common";
 
 /**
  * Biomarker Interpretation Module — NSCLC Knowledge Slice v1.1, Section 6.2.
@@ -24,7 +25,7 @@ export interface BiomarkerInterpretationOutput {
   readonly biomarkers: ReadonlyArray<InterpretedBiomarker>;
   readonly unclassified: ReadonlyArray<UnclassifiedBiomarkerResult>;
   readonly biomarkerDefinitionsVersion: string;
-  readonly biomarkerDefinitionsContentHash: string;
+  readonly biomarkerDefinitionsContentHash: ContentHash;
 }
 
 export function runBiomarkerInterpretationModule(ctx: ModuleRunContext): BiomarkerInterpretationOutput {
@@ -57,7 +58,7 @@ export function runBiomarkerInterpretationModule(ctx: ModuleRunContext): Biomark
     biomarkers,
     unclassified,
     biomarkerDefinitionsVersion: manifest.version,
-    biomarkerDefinitionsContentHash: manifest.contentHash
+    biomarkerDefinitionsContentHash: manifest.manifestHash
   };
 }
 

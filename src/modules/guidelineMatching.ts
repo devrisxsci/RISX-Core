@@ -2,6 +2,7 @@ import type { ModuleRegistration, ModuleRunContext } from "../types.js";
 import type { NccnDecisionPointClaim } from "../evidence/fixtures.js";
 import type { StageOutput } from "./staging.js";
 import type { BiomarkerInterpretationOutput } from "./biomarkerInterpretation.js";
+import type { ContentHash } from "@risx/common";
 
 /**
  * Guideline Matching Module — NSCLC Knowledge Slice v1.1, Section 6.3.
@@ -26,7 +27,7 @@ export interface MatchedDecisionPoint {
 export interface GuidelineMatchingOutput {
   readonly matches: ReadonlyArray<MatchedDecisionPoint>;
   readonly nccnPackageVersion: string;
-  readonly nccnPackageContentHash: string;
+  readonly nccnPackageContentHash: ContentHash;
 }
 
 export function runGuidelineMatchingModule(ctx: ModuleRunContext): GuidelineMatchingOutput {
@@ -70,7 +71,7 @@ export function runGuidelineMatchingModule(ctx: ModuleRunContext): GuidelineMatc
   return {
     matches,
     nccnPackageVersion: manifest.version,
-    nccnPackageContentHash: manifest.contentHash
+    nccnPackageContentHash: manifest.manifestHash
   };
 }
 

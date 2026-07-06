@@ -1,5 +1,6 @@
 import type { ModuleRegistration, ModuleRunContext } from "../types.js";
 import type { AjccStageClaim } from "../evidence/fixtures.js";
+import type { ContentHash } from "@risx/common";
 
 /**
  * Staging Module — NSCLC Knowledge Slice v1.1, Section 6.1.
@@ -13,7 +14,7 @@ import type { AjccStageClaim } from "../evidence/fixtures.js";
 export interface StageOutput {
   readonly stageValue: string;
   readonly ajccPackageVersion: string;
-  readonly ajccPackageContentHash: string;
+  readonly ajccPackageContentHash: ContentHash;
   readonly consultedCanonicalObjectIds: ReadonlyArray<string>;
   readonly warnings: ReadonlyArray<string>;
 }
@@ -76,7 +77,7 @@ export function runStagingModule(ctx: ModuleRunContext): StageOutput {
   return {
     stageValue: matched.claim.stageValue,
     ajccPackageVersion: manifest.version,
-    ajccPackageContentHash: manifest.contentHash,
+    ajccPackageContentHash: manifest.manifestHash,
     consultedCanonicalObjectIds: consultedIds,
     warnings
   };

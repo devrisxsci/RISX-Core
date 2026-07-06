@@ -7,7 +7,7 @@ export const BASE_EXECUTION_CONTEXT: ExecutionContext = {
   tenantId: "test-tenant",
   precedencePolicyVersion: "precedence-v0-single-domain",
   confidencePolicyVersion: "provisional-unweighted-mean-v0-pending-ADR-0002",
-  intendedUsePosture: "clinical-decision-support-non-diagnostic"
+  intendedUsePosture: "clinical-decision-support-eligible"
 };
 
 export function egfrPositiveStageIVInputs(): ReadonlyArray<{
