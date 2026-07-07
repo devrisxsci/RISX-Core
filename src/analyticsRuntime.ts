@@ -15,10 +15,9 @@ import {
   recommendationGenerationModuleRegistration,
   type RecommendationGenerationOutput
 } from "./modules/recommendationGeneration.js";
-import { buildClinicalResult, sealAuditObject } from "./auditReplay.js";
+import { buildClinicalResult, buildRecommendationObject, sealAuditObject } from "./auditReplay.js";
 import { sha256Hex } from "./hash.js";
 import type { AuditObject, ClinicalResult, ExecutionContext, TypedConfidence } from "./types.js";
-import { computeContentHash } from "@risx/common";
 
 /**
  * Analytics Runtime (Computational Core architecture, Section 7: "the
@@ -34,6 +33,14 @@ import { computeContentHash } from "@risx/common";
  * execution only, no cross-domain reasoning"). The phase still executes,
  * explicitly, rather than being silently skipped, so the eight-phase
  * pipeline in the governing architecture is not violated by omission.
+ *
+ * STAGE C (final batch): `aggregateConfidence` fallback uses the concrete
+ * RISX-Common `TypedConfidence` shape — `evidenceStrength` is a string
+ * categorical label ("none-no-eligible-candidate"), not a number; no
+ * `aggregationPolicyVersion` field. `buildRecommendationObject` wraps the
+ * Core-local `NsclcRecommendationConclusion` into the RISX-Common
+ * `RecommendationObject` envelope after audit sealing; `buildClinicalResult`
+ * places the recommendation in `conclusion` (not `recommendation`).
  */
 
 const CanonicalInputCandidateSchema = z.object({
@@ -128,31 +135,22 @@ export class AnalyticsRuntime {
     const eligibleCandidates = recommendationGeneration.recommendation.rankedRegimens.filter(
       (r) => !r.excludedByContraindication
     );
+
+    // ADR-0002 Part A: evidenceStrength is a string categorical label.
+    // Part B (aggregation rule across multiple dimensions) remains open; the
+    // provisional fallback for "no eligible candidate" uses an explicit
+    // "none-no-eligible-candidate" label rather than a number.
     const aggregateConfidence: TypedConfidence =
       eligibleCandidates[0]?.confidence ?? {
-        evidenceStrength: 0,
+        evidenceStrength: "none-no-eligible-candidate",
         applicability: 0,
-        sourceAgreement: 0,
-        statisticalUncertainty: null,
-        aggregationPolicyVersion: "provisional-no-eligible-candidate"
+        sourceAgreement: 0
       };
 
     const moduleSet = CLINICAL_MODULE_IDS.map((id) => {
       const reg = this.registry.get(id);
       return { moduleId: reg.moduleId, version: reg.version };
     });
-
-    // Phase SEAL
-    const audit = sealAuditObject({
-      moduleSet,
-      evidenceSnapshot,
-      canonicalInputs: [...canonicalInputs.entries()],
-      executionDag: plan.map((p) => ({ moduleId: p.moduleId, dependsOn: p.dependsOn })),
-      executionContext,
-      recommendation: recommendationGeneration.recommendation,
-      aggregateConfidence
-    });
-    void resolvedConflicts;
 
     const evidenceRefs = [
       staging.ajccPackageContentHash.digest,
@@ -161,15 +159,43 @@ export class AnalyticsRuntime {
       regimenSelection.fdaLabelsPackageContentHash.digest
     ];
 
+    // Phase SEAL — hash the domain conclusion (NsclcRecommendationConclusion),
+    // not the full RISX-Common envelope (which is derived after sealing).
+    const nsclcConclusion = recommendationGeneration.recommendation;
+    const audit = sealAuditObject({
+      moduleSet,
+      evidenceSnapshot,
+      canonicalInputs: [...canonicalInputs.entries()],
+      executionDag: plan.map((p) => ({ moduleId: p.moduleId, dependsOn: p.dependsOn })),
+      executionContext,
+      recommendation: nsclcConclusion,
+      aggregateConfidence
+    });
+    void resolvedConflicts;
+
+    // Wrap domain conclusion into RISX-Common RecommendationObject envelope
+    // (auditRef available now that the audit is sealed).
+    const recommendation = buildRecommendationObject({
+      nsclcConclusion,
+      aggregateConfidence,
+      auditRef: audit.id,
+      evidenceRefs,
+      moduleRefs: moduleSet.map((m) => m.moduleId),
+      producedAt: executionContext.injectedTimeIso,
+      intendedUse: executionContext.intendedUsePosture,
+      warnings: []
+    });
+
+    // Wrap RecommendationObject into RISX-Common ClinicalResult envelope.
+    // The recommendation is placed in conclusion (CC §27/ADR-0001).
     const clinicalResult = buildClinicalResult({
       id: sha256Hex({ audit: audit.id, kind: "ClinicalResult" }),
       audit,
-      recommendation: recommendationGeneration.recommendation,
+      recommendation,
       aggregateConfidence,
       warnings,
       canonicalObjectIds: [...canonicalInputs.keys()],
-      evidenceRefs,
-      evidencePackages: evidenceSnapshot.packages
+      evidenceRefs
     });
 
     return { clinicalResult, audit };
