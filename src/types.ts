@@ -1,30 +1,63 @@
 /**
  * RISX-Core — types (Phase P2, Mechanical Spine).
  *
- * STAGE C SCOPE NOTE (revised, PO-approved):
- * `devrisxsci/RISX-Common` v2.0 is now consumed for exactly three
- * unentangled surfaces: `AuditObject`, `EvidencePackageManifest`, and
- * `IntendedUse` (imported below from "@risx/common"). These three surfaces
- * were confirmed to have no dependency on `TypedConfidence` and were
- * verified structurally compatible with what this Mechanical Spine
- * implementation and the NSCLC Knowledge Slice v1.1 require.
+ * STAGE C — All four previously-held surfaces are now repointed to
+ * @risx/common v2.0 (main @ 3c7ecd55), completing the Stage C conformance:
  *
- * `ClinicalResult`, `RecommendationObject`, `TypedConfidence`, and
- * `ModuleDefinition` remain LOCAL, PROVISIONAL types below and are HELD
- * pending ADRs: RISX-Common's `ClinicalResult`/`RecommendationObject` are
- * built on `ModuleResultBaseSchema`, which requires a `TypedConfidence`
- * field that is not itself isolatable from those two result envelopes
- * without also resolving the same single-scalar-vs-four-dimension
- * confidence conflict recorded in the prior stage's findings. That
- * dependency is not touched in this stage — see docs/ARCHITECTURAL_ISSUES.md,
- * finding 3, for the original field-by-field analysis (still applicable to
- * these four held types), and the Stage C commit message for exactly which
- * types are held and why.
+ * Previously consumed (Stage A/B): `AuditObject`, `EvidencePackageManifest`,
+ * `IntendedUse`.
+ *
+ * Now consumed (Stage C final batch):
+ *  - `TypedConfidence` — four concrete dimensions per ADR-0002 Part A:
+ *      evidenceStrength (string categorical label), applicability/
+ *      sourceAgreement (number [0,1]), statisticalUncertainty (number,
+ *      optional). The AGGREGATION RULE (ADR-0002 Part B) remains open.
+ *  - `ClinicalResult` — RISX-Common envelope; domain payload goes in
+ *      `conclusion: unknown` (CC §27/ADR-0001).
+ *  - `RecommendationObject` — RISX-Common envelope; domain payload goes in
+ *      `conclusion: unknown` + `resolvedConflicts: []` (Phase P2 single-
+ *      domain, no cross-domain conflicts).
+ *  - `ModuleDefinition` — imported and re-exported; no `dependencies` field
+ *      (ADR-0005). Core-local `ModuleRegistration` extends the static fields
+ *      with the in-process `run` function.
+ *
+ * Core-local types that remain:
+ *  - `NsclcRecommendationConclusion` — domain-specific payload placed in
+ *      `RecommendationObject.conclusion`. Previously the provisional local
+ *      `RecommendationObject`; renamed in Stage C to make the
+ *      envelope/conclusion split explicit (ADR-0001: RISX-Common owns the
+ *      envelope, not the clinical payload).
+ *  - `RegimenCandidate` — domain-specific candidate shape; `confidence` now
+ *      uses the concrete RISX-Common `TypedConfidence` (string
+ *      evidenceStrength, numeric applicability/sourceAgreement).
+ *  - `ModuleRegistration` — runtime extension of `ModuleDefinition` that
+ *      adds the `run` function needed by the Core execution engine.
+ *  - `ExecutionContext`, `EvidencePackage`, etc. — Phase P2 runtime contracts.
  */
 
-import type { AuditObject, EvidencePackageManifest, IntendedUse } from "@risx/common";
+import type {
+  AuditObject,
+  EvidencePackageManifest,
+  IntendedUse,
+  TypedConfidence,
+  ClinicalResult,
+  RecommendationObject,
+  ModuleDefinition,
+  ConfidenceDimension,
+  Provenance,
+} from "@risx/common";
 
-export type { AuditObject, EvidencePackageManifest, IntendedUse };
+export type {
+  AuditObject,
+  EvidencePackageManifest,
+  IntendedUse,
+  TypedConfidence,
+  ClinicalResult,
+  RecommendationObject,
+  ModuleDefinition,
+  ConfidenceDimension,
+  Provenance,
+};
 
 // ---------------------------------------------------------------------------
 // RISX Canonical Object envelope (provisional — see file header)
@@ -37,26 +70,9 @@ export interface CanonicalObjectEnvelope<TPayload = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Typed confidence (HELD — see file header). RISX-Common concept, Section 26
-// of the Computational Core architecture) — dimensions are structural per
-// the governing architecture; the aggregation RULE across dimensions is
-// intentionally left as the simplest documented, versioned, and provisional
-// rule pending ADR-0002.
-// ---------------------------------------------------------------------------
-
-export interface TypedConfidence {
-  readonly evidenceStrength: number; // [0,1]
-  readonly applicability: number; // [0,1]
-  readonly sourceAgreement: number; // [0,1]
-  readonly statisticalUncertainty: number | null; // [0,1] or not applicable
-  readonly aggregationPolicyVersion: string;
-}
-
-// ---------------------------------------------------------------------------
-// Execution context (Section 5.2) — every value that could otherwise vary
-// between two identical executions is carried explicitly here.
-// `intendedUsePosture` is now typed against @risx/common's `IntendedUse`
-// (one of the three consumed surfaces).
+// Execution context (CC §5.2) — every value that could otherwise vary
+// between two identical executions is carried explicitly.
+// `intendedUsePosture` is typed against @risx/common's `IntendedUse`.
 // ---------------------------------------------------------------------------
 
 export interface ExecutionContext {
@@ -69,18 +85,7 @@ export interface ExecutionContext {
 }
 
 // ---------------------------------------------------------------------------
-// Evidence Package (Evidence Package Specification, Sections 14-19) — the
-// manifest shape is now @risx/common's `EvidencePackageManifest` (one of the
-// three consumed surfaces). There is still no Knowledge Compiler or digital
-// signature authority in this phase, so packages here are fixtures with a
-// real hash tree but a placeholder signature; this is documented as a Phase
-// P2 simplification, not a claim of full EP-13 conformance (which requires a
-// trusted publisher that does not exist yet).
-//
-// `source` is a Core-local field describing the fixture's provenance (e.g.
-// "AJCC/UICC"). It is NOT part of the @risx/common `EvidencePackageManifest`
-// schema (which has no such field), so it is carried on the Core-local
-// `EvidencePackage` wrapper instead of being smuggled into the manifest.
+// Evidence Package (EPS §14-19)
 // ---------------------------------------------------------------------------
 
 export interface EvidenceAssertion<TClaim = unknown> {
@@ -96,21 +101,28 @@ export interface EvidencePackage<TClaim = unknown> {
   readonly assertions: ReadonlyArray<EvidenceAssertion<TClaim>>;
 }
 
-// Pinned snapshot: exact package versions + hashes an execution reasons over.
 export interface EvidenceSnapshot {
   readonly packages: ReadonlyArray<EvidencePackageManifest>;
 }
 
 // ---------------------------------------------------------------------------
-// Module contract (Sections 10-11) — language-neutral in the governing
-// architecture; expressed here as a same-process TypeScript contract because
-// Phase P2 implements only the Clinical domain in one repository. Crossing a
-// real wire boundary is not required to prove the mechanical spine and is not
-// introduced here (see docs/PHASE_P2_SCOPE.md).
+// Module contract (CC §10-11).
 //
-// `ModuleDefinition` (RISX-Common's manifest for a registered module) is
-// HELD — see file header — so `ModuleRegistration` below remains the local,
-// provisional module contract shape, unchanged from the prior stage.
+// `ModuleDefinition` (RISX-Common manifest, no `dependencies` per ADR-0005)
+// is imported and re-exported above. `ModuleRegistration` adds the `run`
+// function needed by the Phase P2 in-process engine; it is Core-local
+// because CC §11 specifies only the manifest, not a same-process invocation
+// contract.
+//
+// `confidenceProfile` uses `ConfidenceDimension` (RISX-Common) so declared
+// dimensions are consistent with `TypedConfidence`'s concrete fields.
+//
+// `declaredOutputs` remains a single string (the producer key used by the
+// orchestrator's declaration-derived DAG); each module in this Phase P2
+// single-domain slice produces exactly one output type.
+//
+// NO `dependencies` field: per ADR-0005 the Orchestrator derives the
+// dependency graph from `declaredInputs`/`declaredOutputs` alone (CC §8.2).
 // ---------------------------------------------------------------------------
 
 export interface ModuleRegistration<TInputs, TOutput> {
@@ -119,7 +131,7 @@ export interface ModuleRegistration<TInputs, TOutput> {
   readonly domain: string;
   readonly declaredInputs: ReadonlyArray<string>;
   readonly declaredOutputs: string;
-  readonly confidenceProfile: ReadonlyArray<keyof TypedConfidence>;
+  readonly confidenceProfile: ReadonlyArray<ConfidenceDimension>;
   readonly deterministic: true;
   readonly requiresInjectedRandomness: boolean;
   readonly run: (inputs: TInputs, ctx: ModuleRunContext) => TOutput;
@@ -141,15 +153,20 @@ export interface EvidenceQueryHandle {
 }
 
 // ---------------------------------------------------------------------------
-// Recommendation / Clinical Result envelopes (Sections 27, 34) — HELD, see
-// file header: RISX-Common's `RecommendationObject` and `ClinicalResult` are
-// entangled with `TypedConfidence` via `ModuleResultBaseSchema` and are not
-// isolatable in this stage. These remain the local, provisional shapes,
-// unchanged from the prior stage.
+// NSCLC domain types (Core-local, Phase P2).
 //
-// `AuditObject` below is no longer defined locally — it is imported from
-// "@risx/common" above (one of the three consumed surfaces) and used
-// directly by `ExecutionResult`.
+// `RegimenCandidate` — domain-specific candidate shape.
+//   `confidence` uses the concrete RISX-Common `TypedConfidence` (ADR-0002
+//   Part A): `evidenceStrength` is the guideline-category string label (e.g.
+//   "NCCN-Category-1"), not a number; `applicability`/`sourceAgreement` are
+//   numbers in [0,1]; `statisticalUncertainty` is omitted (not applicable at
+//   this level per Phase P2 scope).
+//
+// `NsclcRecommendationConclusion` — domain-specific payload placed in
+//   `RecommendationObject.conclusion` (CC §27 / ADR-0001: RISX-Common owns
+//   the result envelope; the clinical domain payload is opaque to it).
+//   Previously the provisional local `RecommendationObject`; renamed in Stage
+//   C to make the envelope / conclusion split explicit.
 // ---------------------------------------------------------------------------
 
 export interface RegimenCandidate {
@@ -162,30 +179,25 @@ export interface RegimenCandidate {
   readonly confidence: TypedConfidence;
 }
 
-export interface RecommendationObject {
+export interface NsclcRecommendationConclusion {
   readonly recommendationId: string;
   readonly rankedRegimens: ReadonlyArray<RegimenCandidate>;
   readonly intendedUsePosture: IntendedUse;
 }
 
-export interface ClinicalResult {
-  readonly id: string;
-  readonly schemaVersion: string;
-  readonly provenance: {
-    readonly evidencePackages: ReadonlyArray<EvidencePackageManifest>;
-    readonly canonicalObjectIds: ReadonlyArray<string>;
-  };
-  readonly confidence: TypedConfidence;
-  readonly auditRef: string;
-  readonly evidenceRefs: ReadonlyArray<string>;
-  readonly moduleRefs: ReadonlyArray<{ moduleId: string; version: string }>;
-  readonly producedAt: string;
-  readonly intendedUse: IntendedUse;
-  readonly warnings: ReadonlyArray<string>;
-  readonly recommendation: RecommendationObject;
-}
-
 export interface ExecutionResult {
   readonly clinicalResult: ClinicalResult;
   readonly audit: AuditObject;
+}
+
+// ---------------------------------------------------------------------------
+// Typed accessor: extracts the NSCLC domain conclusion from a sealed
+// ClinicalResult (double-unwrap through the envelope chain:
+//   ClinicalResult.conclusion → RecommendationObject →
+//   RecommendationObject.conclusion → NsclcRecommendationConclusion).
+// Use in tests and any caller that needs the domain-specific ranked regimens.
+// ---------------------------------------------------------------------------
+
+export function extractNsclcConclusion(result: ClinicalResult): NsclcRecommendationConclusion {
+  return (result.conclusion as RecommendationObject).conclusion as NsclcRecommendationConclusion;
 }
