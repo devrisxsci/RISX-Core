@@ -1,4 +1,4 @@
-import type { ModuleRegistration, ModuleRunContext, RegimenCandidate, RecommendationObject, TypedConfidence } from "../types.js";
+import type { ModuleRegistration, ModuleRunContext, RegimenCandidate, NsclcRecommendationConclusion, TypedConfidence } from "../types.js";
 import type { RegimenSelectionOutput } from "./regimenSelection.js";
 import type { GuidelineMatchingOutput } from "./guidelineMatching.js";
 
@@ -9,18 +9,21 @@ import type { GuidelineMatchingOutput } from "./guidelineMatching.js";
  * Evidence Packages itself").
  * Deterministic processing order: 4 (terminal).
  *
- * Confidence aggregation: ADR-0002 (NSCLC spec, Section 12.2) records that
- * the aggregate-confidence computation rule across upstream dimensions is
- * still an OPEN architectural question, not yet decided by the governing
- * corpus. Per IA-003's Stop Conditions, this implementation does not decide
- * that question. It applies the simplest possible placeholder rule —
- * unweighted mean of the available [0,1] dimensions — clearly labeled with
- * an explicit `aggregationPolicyVersion` so it is versioned, replayable, and
- * trivially replaceable once ADR-0002 resolves, per GR-33's tolerance for
- * versioned, non-result-altering policy evolution.
+ * STAGE C: `TypedConfidence` is now the concrete RISX-Common v2.0 shape
+ * (ADR-0002 Part A): `evidenceStrength` is a string categorical label (e.g.
+ * "NCCN-Category-1"), not a number. `statisticalUncertainty` is omitted
+ * (undefined) — not applicable at per-candidate level in Phase P2.
+ * `aggregationPolicyVersion` is removed; it was not part of the ADR-0002
+ * Part A shape. The AGGREGATION RULE (ADR-0002 Part B) remains open; this
+ * module still carries a provisional "take upstream strength score for
+ * ranking" logic, but the confidence field reflects only the direct guideline
+ * category label, not an invented aggregate number.
+ *
+ * `RecommendationGenerationOutput.recommendation` is now typed as
+ * `NsclcRecommendationConclusion` (the Core-local domain payload renamed from
+ * the provisional local `RecommendationObject`). The Analytics Runtime wraps
+ * it in the RISX-Common `RecommendationObject` envelope after audit sealing.
  */
-
-const CONFIDENCE_POLICY_VERSION = "provisional-unweighted-mean-v0-pending-ADR-0002";
 
 function evidenceCategoryToStrengthScore(evidenceStrength: string): number {
   // NCCN Category 1 is the strongest guideline rating in this fixture set;
@@ -29,18 +32,17 @@ function evidenceCategoryToStrengthScore(evidenceStrength: string): number {
   return 0.5;
 }
 
-function aggregateConfidence(evidenceStrength: number, applicability: number, sourceAgreement: number): TypedConfidence {
-  return {
-    evidenceStrength,
-    applicability,
-    sourceAgreement,
-    statisticalUncertainty: null,
-    aggregationPolicyVersion: CONFIDENCE_POLICY_VERSION
-  };
+function buildCandidateConfidence(evidenceStrength: string, applicability: number, sourceAgreement: number): TypedConfidence {
+  // ADR-0002 Part A: evidenceStrength is the categorical string label from
+  // the guideline assertion, not a derived numeric score. The numeric score
+  // (`evidenceCategoryToStrengthScore`) is used ONLY for ranking candidate
+  // regimens, never for the TypedConfidence field itself.
+  // statisticalUncertainty is omitted (undefined) — not applicable here.
+  return { evidenceStrength, applicability, sourceAgreement };
 }
 
 export interface RecommendationGenerationOutput {
-  readonly recommendation: RecommendationObject;
+  readonly recommendation: NsclcRecommendationConclusion;
 }
 
 export function runRecommendationGenerationModule(ctx: ModuleRunContext): RecommendationGenerationOutput {
@@ -71,7 +73,7 @@ export function runRecommendationGenerationModule(ctx: ModuleRunContext): Recomm
     evidenceStrength: r.evidenceStrength,
     excludedByContraindication: r.excludedByContraindication,
     contraindicationReasons: r.contraindicationReasons,
-    confidence: aggregateConfidence(evidenceCategoryToStrengthScore(r.evidenceStrength), 1.0, 1.0)
+    confidence: buildCandidateConfidence(r.evidenceStrength, 1.0, 1.0)
   }));
 
   // Also surface excluded regimens for full explainability (Section 6.4
@@ -86,7 +88,7 @@ export function runRecommendationGenerationModule(ctx: ModuleRunContext): Recomm
       evidenceStrength: r.evidenceStrength,
       excludedByContraindication: r.excludedByContraindication,
       contraindicationReasons: r.contraindicationReasons,
-      confidence: aggregateConfidence(evidenceCategoryToStrengthScore(r.evidenceStrength), 0, 1.0)
+      confidence: buildCandidateConfidence(r.evidenceStrength, 0, 1.0)
     }));
 
   return {
@@ -109,5 +111,3 @@ export const recommendationGenerationModuleRegistration: ModuleRegistration<unde
   requiresInjectedRandomness: false,
   run: (_inputs, ctx) => runRecommendationGenerationModule(ctx)
 };
-
-export { CONFIDENCE_POLICY_VERSION };
