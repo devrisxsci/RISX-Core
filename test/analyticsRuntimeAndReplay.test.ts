@@ -4,6 +4,8 @@ import { verifyReplay, ReplayDivergenceError } from "../src/auditReplay.js";
 import { BASE_EXECUTION_CONTEXT, egfrPositiveStageIVInputs } from "./fixtures.js";
 import { admitCanonicalInputs, CanonicalInputRejectedError } from "../src/canonicalInputGateway.js";
 import { StagingValidationError } from "../src/modules/staging.js";
+import { extractNsclcConclusion } from "../src/types.js";
+import type { NsclcRecommendationConclusion } from "../src/types.js";
 
 describe("Analytics Runtime — end-to-end NSCLC clinical reasoning (Phase P2 Mechanical Spine)", () => {
   it("produces the guideline-matched, evidence-cited EGFR recommendation for a Stage IV EGFR-positive patient", () => {
@@ -13,8 +15,8 @@ describe("Analytics Runtime — end-to-end NSCLC clinical reasoning (Phase P2 Me
       executionContext: BASE_EXECUTION_CONTEXT
     });
 
-    expect(clinicalResult.recommendation.rankedRegimens[0]?.regimenId).toBe("osimertinib-monotherapy");
-    expect(clinicalResult.recommendation.rankedRegimens[0]?.excludedByContraindication).toBe(false);
+    expect(extractNsclcConclusion(clinicalResult).rankedRegimens[0]?.regimenId).toBe("osimertinib-monotherapy");
+    expect(extractNsclcConclusion(clinicalResult).rankedRegimens[0]?.excludedByContraindication).toBe(false);
     expect(clinicalResult.warnings).toHaveLength(0);
     expect(audit.moduleSet.map((m) => m.moduleId)).toEqual([
       "staging-module",
@@ -37,7 +39,7 @@ describe("Analytics Runtime — end-to-end NSCLC clinical reasoning (Phase P2 Me
         : c
     );
     const { clinicalResult } = runtime.execute({ canonicalInputs: inputs, executionContext: BASE_EXECUTION_CONTEXT });
-    const osimertinibCandidate = clinicalResult.recommendation.rankedRegimens.find(
+    const osimertinibCandidate = extractNsclcConclusion(clinicalResult).rankedRegimens.find(
       (r) => r.regimenId === "osimertinib-monotherapy"
     );
     expect(osimertinibCandidate?.excludedByContraindication).toBe(true);
@@ -54,7 +56,7 @@ describe("Analytics Runtime — end-to-end NSCLC clinical reasoning (Phase P2 Me
     const { clinicalResult } = runtime.execute({ canonicalInputs: inputs, executionContext: BASE_EXECUTION_CONTEXT });
     expect(clinicalResult.warnings.some((w) => w.includes("could not be classified"))).toBe(true);
     // With no actionable biomarker, the guideline-agnostic default regimen should be recommended instead.
-    expect(clinicalResult.recommendation.rankedRegimens[0]?.regimenId).toBe("carboplatin-pemetrexed-pembrolizumab");
+    expect(extractNsclcConclusion(clinicalResult).rankedRegimens[0]?.regimenId).toBe("carboplatin-pemetrexed-pembrolizumab");
   });
 
   it("rejects at the Canonical Input Gateway boundary rather than reaching any module (GR-32 admission discipline)", () => {
@@ -101,20 +103,20 @@ describe("Audit & Replay Subsystem — deterministic replay (GR-28, GR-29, Secti
 
     const result = verifyReplay(audit, {
       canonicalInputs: admitForFingerprint(inputs),
-      recommendation: replayed.clinicalResult.recommendation,
+      recommendation: extractNsclcConclusion(replayed.clinicalResult),
       aggregateConfidence: replayed.clinicalResult.confidence
     });
 
     expect(result.identical).toBe(true);
     expect(replayed.audit.resultHashes.recommendationHash.digest).toBe(audit.resultHashes.recommendationHash.digest);
-    expect(replayed.clinicalResult.recommendation).toEqual(clinicalResult.recommendation);
+    expect(extractNsclcConclusion(replayed.clinicalResult)).toEqual(extractNsclcConclusion(clinicalResult));
   });
 
   it("surfaces replay divergence as a defect rather than reconciling, when the recomputed result differs (GR-29)", () => {
     const runtime = new AnalyticsRuntime();
     const { audit } = runtime.execute({ canonicalInputs: egfrPositiveStageIVInputs(), executionContext: BASE_EXECUTION_CONTEXT });
 
-    const divergentRecommendation = {
+    const divergentRecommendation: NsclcRecommendationConclusion = {
       recommendationId: "rec-tampered",
       rankedRegimens: [],
       intendedUsePosture: BASE_EXECUTION_CONTEXT.intendedUsePosture
@@ -125,11 +127,9 @@ describe("Audit & Replay Subsystem — deterministic replay (GR-28, GR-29, Secti
         canonicalInputs: admitForFingerprint(egfrPositiveStageIVInputs()),
         recommendation: divergentRecommendation,
         aggregateConfidence: {
-          evidenceStrength: 0,
+          evidenceStrength: "tampered",
           applicability: 0,
-          sourceAgreement: 0,
-          statisticalUncertainty: null,
-          aggregationPolicyVersion: "tampered"
+          sourceAgreement: 0
         }
       })
     ).toThrow(ReplayDivergenceError);
