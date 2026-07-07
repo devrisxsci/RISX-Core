@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "zod": "^3.23.8",
-    "@risx/common": "github:devrisxsci/RISX-Common#d5f81b955af7a79f1a6cab8d7ce39e510a13f237"
+    "@risx/common": "github:devrisxsci/RISX-Common#3c7ecd550cbe057b17a762ac5db2d87719717c53"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
