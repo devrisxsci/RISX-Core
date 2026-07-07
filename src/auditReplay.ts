@@ -1,4 +1,4 @@
-import type { AuditObject, ClinicalResult, EvidencePackageManifest, RecommendationObject, TypedConfidence } from "./types.js";
+import type { AuditObject, ClinicalResult, RecommendationObject, TypedConfidence, IntendedUse, NsclcRecommendationConclusion } from "./types.js";
 import type { EvidenceSnapshot, ExecutionContext } from "./types.js";
 import { computeContentHash } from "@risx/common";
 import { sha256Hex } from "./hash.js";
@@ -13,8 +13,8 @@ import { sha256Hex } from "./hash.js";
  * average, prefer, or reconcile the two. It fails and surfaces the
  * divergence as a defect."
  *
- * STAGE C: the sealed `AuditObject` is now @risx/common's v2.0 shape (one of
- * the three consumed surfaces). Its content-hash-typed fields
+ * STAGE C: the sealed `AuditObject` is now @risx/common's v2.0 shape (one
+ * of the three consumed surfaces). Its content-hash-typed fields
  * (`canonicalInputFingerprint`, `evidenceSnapshot[].contentHash`,
  * `resultHashes.*`) are populated with @risx/common's `computeContentHash`,
  * which canonicalizes and hashes exactly like this file's existing
@@ -25,18 +25,21 @@ import { sha256Hex } from "./hash.js";
  * still used below for the audit `id`, which the schema types only as
  * `z.string().min(1)`, not as a `ContentHash`.
  *
- * A note on scope: the Audit Object's `canonicalInputFingerprint` records a
- * hash of the pinned inputs, per the governing architecture — it does not
- * itself durably store the raw canonical inputs. Durable storage of
- * historical canonical inputs is not a Computational Core responsibility in
- * the governing architecture (Sections 39-43 place external state and
- * connectivity outside the Core entirely) and no such store exists yet in
- * the platform. Replay in this Phase P2 implementation therefore accepts
- * the original canonical inputs as an explicit argument (as a caller
- * outside the Core, e.g. Studio, would supply them from wherever they are
- * archived) and verifies them against the recorded fingerprint before
- * proceeding — it does not invent a canonical-input archive inside
- * RISX-Core, which would be an undocumented architectural addition.
+ * STAGE C (final batch): `SealArgs.recommendation` is now typed as
+ * `NsclcRecommendationConclusion` — the Core-local domain payload (ranked
+ * regimens etc.) — rather than the full RISX-Common `RecommendationObject`
+ * envelope. This correctly hashes "what was decided" (the domain conclusion),
+ * not the envelope metadata derived from it. `buildRecommendationObject`
+ * wraps the conclusion into the RISX-Common envelope after the audit is
+ * sealed. `buildClinicalResult` now produces a conformant RISX-Common
+ * `ClinicalResult` with proper `objectType`, `schemaVersion`, `provenance`
+ * (using RISX-Common's concrete `Provenance` shape), and `moduleRefs` as
+ * a `string[]` of module IDs (not objects), with the `RecommendationObject`
+ * placed in `conclusion: unknown` per CC §27/ADR-0001.
+ *
+ * See auditReplay.ts file header (original) for the note on why canonical
+ * inputs are accepted as an explicit argument to `verifyReplay` rather than
+ * being archived inside RISX-Core itself.
  */
 
 export const ENGINE_VERSION = "0.1.0+phase-p2-mechanical-spine";
@@ -48,18 +51,11 @@ export interface SealArgs {
   readonly canonicalInputs: ReadonlyArray<readonly [string, unknown]>;
   readonly executionDag: ReadonlyArray<{ moduleId: string; dependsOn: ReadonlyArray<string> }>;
   readonly executionContext: ExecutionContext;
-  readonly recommendation: RecommendationObject;
+  /** The domain-specific conclusion hashed into the audit (not the full RISX-Common envelope). */
+  readonly recommendation: NsclcRecommendationConclusion;
   readonly aggregateConfidence: TypedConfidence;
 }
 
-/**
- * Builds the reduced evidence-snapshot shape the v2.0 `AuditObject` schema
- * requires (`{ packageId, version, contentHash }[]`) from the full
- * `EvidencePackageManifest[]` this Core pins. Per EP-10, a package
- * manifest's `manifestHash` is its "single root of integrity" — verifying it
- * verifies the whole package transitively — so `manifestHash` is what is
- * recorded here as each package's `contentHash`.
- */
 function toAuditEvidenceSnapshot(snapshot: EvidenceSnapshot): AuditObject["evidenceSnapshot"] {
   return snapshot.packages.map((manifest) => ({
     packageId: manifest.packageId,
@@ -68,14 +64,6 @@ function toAuditEvidenceSnapshot(snapshot: EvidenceSnapshot): AuditObject["evide
   }));
 }
 
-/**
- * Builds the v2.0 `executionDag` shape (`{ nodes, edges }`) from the planned
- * DAG this Core resolves. Per CC §8.1/§8.2, "nodes are module invocations
- * and edges are declared data dependencies"; edges are recorded here in
- * producer -> consumer (data-flow) direction, i.e. `from` is the module a
- * dependent module's input came from and `to` is the dependent module,
- * matching §8.2's "dependency resolution matches producers to consumers."
- */
 function toAuditExecutionDag(
   moduleSet: ReadonlyArray<{ moduleId: string; version: string }>,
   executionDag: ReadonlyArray<{ moduleId: string; dependsOn: ReadonlyArray<string> }>
@@ -126,7 +114,6 @@ export function sealAuditObject(args: SealArgs): AuditObject {
       validTime: args.executionContext.injectedTimeIso,
       decisionTime: args.executionContext.injectedTimeIso
     },
-    // Phase P2 is single-domain: the Cross-Domain Reasoner has nothing to resolve.
     resolvedConflicts: [],
     resultHashes: {
       recommendationHash,
@@ -135,31 +122,80 @@ export function sealAuditObject(args: SealArgs): AuditObject {
   };
 }
 
+/**
+ * Wraps a `NsclcRecommendationConclusion` (Core-local domain payload) in the
+ * RISX-Common `RecommendationObject` envelope (CC §27 / ADR-0001). Called
+ * after `sealAuditObject` so that `auditRef` can be populated from the sealed
+ * audit's id.
+ */
+export function buildRecommendationObject(args: {
+  readonly nsclcConclusion: NsclcRecommendationConclusion;
+  readonly aggregateConfidence: TypedConfidence;
+  readonly auditRef: string;
+  readonly evidenceRefs: ReadonlyArray<string>;
+  readonly moduleRefs: ReadonlyArray<string>;
+  readonly producedAt: string;
+  readonly intendedUse: IntendedUse;
+  readonly warnings: ReadonlyArray<string>;
+}): RecommendationObject {
+  return {
+    id: args.nsclcConclusion.recommendationId,
+    objectType: "RecommendationObject",
+    schemaVersion: "2.0.0",
+    provenance: {
+      sourceSystem: "risx-core-phase-p2",
+      documentId: args.nsclcConclusion.recommendationId,
+      extractionMethod: "deterministic-rule-engine",
+      recordedAt: args.producedAt
+    },
+    confidence: args.aggregateConfidence,
+    auditRef: args.auditRef,
+    evidenceRefs: [...args.evidenceRefs],
+    moduleRefs: [...args.moduleRefs],
+    producedAt: args.producedAt,
+    intendedUse: args.intendedUse,
+    warnings: [...args.warnings],
+    conclusion: args.nsclcConclusion,
+    resolvedConflicts: []
+  };
+}
+
+/**
+ * Assembles the RISX-Common `ClinicalResult` envelope from the sealed audit
+ * and the fully-wrapped `RecommendationObject`. The recommendation is placed
+ * in `conclusion: unknown` per CC §27 / ADR-0001 (RISX-Common owns the
+ * envelope; the clinical domain payload is opaque to it). `moduleRefs` are
+ * module IDs (strings), not objects. `provenance` uses the concrete
+ * RISX-Common `Provenance` shape (sourceSystem, documentId, extractionMethod,
+ * recordedAt).
+ */
 export function buildClinicalResult(args: {
-  id: string;
-  audit: AuditObject;
-  recommendation: RecommendationObject;
-  aggregateConfidence: TypedConfidence;
-  warnings: ReadonlyArray<string>;
-  canonicalObjectIds: ReadonlyArray<string>;
-  evidenceRefs: ReadonlyArray<string>;
-  evidencePackages: ReadonlyArray<EvidencePackageManifest>;
+  readonly id: string;
+  readonly audit: AuditObject;
+  readonly recommendation: RecommendationObject;
+  readonly aggregateConfidence: TypedConfidence;
+  readonly warnings: ReadonlyArray<string>;
+  readonly canonicalObjectIds: ReadonlyArray<string>;
+  readonly evidenceRefs: ReadonlyArray<string>;
 }): ClinicalResult {
   return {
     id: args.id,
-    schemaVersion: "risx-core-phase-p2-provisional-1",
+    objectType: "ClinicalResult",
+    schemaVersion: "2.0.0",
     provenance: {
-      evidencePackages: args.evidencePackages,
-      canonicalObjectIds: args.canonicalObjectIds
+      sourceSystem: "risx-core-phase-p2",
+      documentId: args.id,
+      extractionMethod: "deterministic-rule-engine",
+      recordedAt: args.audit.bitemporalTimestamps.decisionTime
     },
     confidence: args.aggregateConfidence,
     auditRef: args.audit.id,
-    evidenceRefs: args.evidenceRefs,
-    moduleRefs: args.audit.moduleSet,
+    evidenceRefs: [...args.evidenceRefs],
+    moduleRefs: args.audit.moduleSet.map((m) => m.moduleId),
     producedAt: args.audit.bitemporalTimestamps.decisionTime,
     intendedUse: args.audit.intendedUsePosture,
-    warnings: args.warnings,
-    recommendation: args.recommendation
+    warnings: [...args.warnings],
+    conclusion: args.recommendation
   };
 }
 
@@ -188,13 +224,17 @@ export interface ReplayResult {
  * then re-executes with the recorded module versions/evidence snapshot/
  * policy versions/context and compares the resulting hashes bit-for-bit.
  * Any divergence throws `ReplayDivergenceError` rather than reconciling.
+ *
+ * `recomputed.recommendation` is the `NsclcRecommendationConclusion` (the
+ * domain payload that was hashed into the audit at seal time), not the full
+ * RISX-Common `RecommendationObject` envelope.
  */
 export function verifyReplay(
   recorded: AuditObject,
   recomputed: {
-    canonicalInputs: ReadonlyArray<readonly [string, unknown]>;
-    recommendation: RecommendationObject;
-    aggregateConfidence: TypedConfidence;
+    readonly canonicalInputs: ReadonlyArray<readonly [string, unknown]>;
+    readonly recommendation: NsclcRecommendationConclusion;
+    readonly aggregateConfidence: TypedConfidence;
   }
 ): ReplayResult {
   const recomputedFingerprint = computeContentHash(
