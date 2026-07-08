@@ -1,6 +1,5 @@
 import type { ModuleRegistration, ModuleRunContext } from "../types.js";
-import type { BiomarkerDefinitionClaim } from "../evidence/fixtures.js";
-import type { ContentHash } from "@risx/common";
+import type { BiomarkerClaim, ContentHash } from "@risx/common";
 
 /**
  * Biomarker Interpretation Module — NSCLC Knowledge Slice v1.1, Section 6.2.
@@ -30,7 +29,7 @@ export interface BiomarkerInterpretationOutput {
 
 export function runBiomarkerInterpretationModule(ctx: ModuleRunContext): BiomarkerInterpretationOutput {
   const manifest = ctx.evidence.packageManifest("biomarker-definitions");
-  const definitions = ctx.evidence.queryAssertions<BiomarkerDefinitionClaim>("biomarker-definitions");
+  const definitions = ctx.evidence.queryAssertions<BiomarkerClaim>("biomarker-definitions");
 
   const results = [...ctx.canonicalInputs.values()].filter((o) => o.canonicalObjectType === "BiomarkerResults");
 
