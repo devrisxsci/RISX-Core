@@ -2,6 +2,7 @@ import type { EvidencePackage } from "../types.js";
   import { computeContentHash, EvidencePackageManifestSchema, type ContentHash } from "@risx/common";
   import { COMPILED_NCCN_PACKAGE_DATA } from "./compiled/nccn-nsclc-package.js";
   import { COMPILED_FDA_PACKAGE_DATA } from "./compiled/fda-labels-package.js";
+  import { COMPILED_BIOMARKER_PACKAGE_DATA } from "./compiled/biomarker-package.js";
 
   /**
    * Fixture Evidence Packages for the NSCLC Enterprise Knowledge Slice.
@@ -109,43 +110,6 @@ import type { EvidencePackage } from "../types.js";
     ]
   );
 
-  export interface BiomarkerDefinitionClaim {
-    readonly biomarkerCode:          string;
-    readonly displayName:            string;
-    readonly molecularAlteration:    string;
-    readonly positivityThreshold:    string;
-  }
-
-  export const BIOMARKER_DEFINITIONS = buildPackage<BiomarkerDefinitionClaim>(
-    "biomarker-definitions",
-    "2026.1.0",
-    "Biomarker Definitions Curators",
-    [
-      {
-        assertionId:       "biomarker-egfr-ex19del",
-        evidenceCategory:  "Curated-Actionable",
-        claim: {
-          biomarkerCode:       "EGFR-EX19DEL",
-          displayName:         "EGFR exon 19 deletion",
-          molecularAlteration: "EGFR exon 19 deletion",
-          positivityThreshold: "detected",
-        },
-        citation: "Biomarker Definitions v2026.1, EGFR panel",
-      },
-      {
-        assertionId:       "biomarker-alk-fusion",
-        evidenceCategory:  "Curated-Actionable",
-        claim: {
-          biomarkerCode:       "ALK-FUSION",
-          displayName:         "ALK fusion",
-          molecularAlteration: "ALK gene rearrangement",
-          positivityThreshold: "detected",
-        },
-        citation: "Biomarker Definitions v2026.1, ALK panel",
-      },
-    ]
-  );
-
   /**
    * AR1 Step 2: NCCN NSCLC Guidelines — loaded from the committed compiler
    * artifact. No longer a hand-authored fixture. The manifest carries the
@@ -180,6 +144,27 @@ import type { EvidencePackage } from "../types.js";
 
   export const FDA_DRUG_LABELS: EvidencePackage<unknown> =
     loadCompiledFdaPackage(COMPILED_FDA_PACKAGE_DATA);
+
+  /**
+   * A2: Biomarker Definitions — loaded from the committed compiler artifact.
+   * No longer a hand-authored fixture. The manifest carries the genuine
+   * compilerId "risx-knowledge-compiler" and its corresponding hashes.
+   *
+   * EXPECTED: evidenceSnapshot.contentHash for biomarker-dependent runs will
+   * differ from pre-cutover runs (genuine compiler identity replaces the
+   * fixture placeholder). Clinical/interpretation behavior is unchanged —
+   * this is a breaking-provenance-not-reasoning change.
+   */
+  function loadCompiledBiomarkerPackage(raw: typeof COMPILED_BIOMARKER_PACKAGE_DATA): EvidencePackage<unknown> {
+    return {
+      manifest:   EvidencePackageManifestSchema.parse(raw.manifest),
+      source:     raw.source,
+      assertions: raw.assertions as EvidencePackage<unknown>["assertions"],
+    };
+  }
+
+  export const BIOMARKER_DEFINITIONS: EvidencePackage<unknown> =
+    loadCompiledBiomarkerPackage(COMPILED_BIOMARKER_PACKAGE_DATA);
 
   export const ALL_FIXTURE_PACKAGES = [
     AJCC_STAGING_MANUAL,

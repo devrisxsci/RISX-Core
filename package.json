@@ -1,25 +1,24 @@
 {
-    "name": "@risx/core",
-    "version": "0.1.0",
-    "private": true,
-    "description": "RISX-Core — the deterministic multi-domain reasoning engine of the RISX Platform (Layer 6). Phase P2 Mechanical Spine implementation per IA-003.",
-    "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "scripts": {
-      "build": "tsc -p tsconfig.json",
-      "typecheck": "tsc -p tsconfig.json --noEmit",
-      "test": "vitest run",
-      "test:watch": "vitest"
-    },
-    "dependencies": {
-      "zod": "^3.23.8",
-      "@risx/common": "github:devrisxsci/RISX-Common#2706d7f644806861188bc150b172095371b09564"
-    },
-    "devDependencies": {
-      "typescript": "^5.6.3",
-      "vitest": "^3.2.4",
-      "@types/node": "^22.7.5"
-    }
+  "name": "@risx/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RISX-Core — the deterministic multi-domain reasoning engine of the RISX Platform (Layer 6). Phase P2 Mechanical Spine implementation per IA-003.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "zod": "^3.23.8",
+    "@risx/common": "github:devrisxsci/RISX-Common#7e471595d8e4eac155838e449e5d24eb77dab491"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4",
+    "@types/node": "^22.7.5"
   }
-  
+}
