@@ -1,6 +1,7 @@
-import type { ModuleRegistration, ModuleRunContext, RegimenCandidate, NsclcRecommendationConclusion, TypedConfidence } from "../types.js";
+import type { ModuleRegistration, ModuleRunContext, RegimenCandidate, RegimenCostSummary, NsclcRecommendationConclusion, TypedConfidence } from "../types.js";
 import type { RegimenSelectionOutput } from "./regimenSelection.js";
 import type { GuidelineMatchingOutput } from "./guidelineMatching.js";
+import type { EconomicCostResolutionOutput } from "./economicCostResolution.js";
 
 /**
  * Recommendation Generation Module — NSCLC Knowledge Slice v1.1, Section 6.5.
@@ -55,6 +56,15 @@ export function runRecommendationGenerationModule(ctx: ModuleRunContext): Recomm
     throw new Error("Recommendation Generation Module: upstream Guideline Matching Module output was not available.");
   }
 
+  // Stage 3: optional additive CMS cost annotation. If the Economic Cost
+  // Resolution Module ran upstream, index its per-regimen summaries by
+  // regimenId so we can attach them to candidates. This is purely additive —
+  // it is read AFTER ranking is decided and never participates in the sort.
+  const costOutput = ctx.upstream.get("knowledge:RegimenCosts") as EconomicCostResolutionOutput | undefined;
+  const costByRegimenId = new Map<string, RegimenCostSummary>(
+    (costOutput?.regimenCosts ?? []).map((c) => [c.regimenId, c])
+  );
+
   const eligible = regimenSelection.rankedRegimens.filter((r) => !r.excludedByContraindication);
 
   // Rank: strongest evidence first. On a strength tie, preserve the incoming
@@ -73,7 +83,8 @@ export function runRecommendationGenerationModule(ctx: ModuleRunContext): Recomm
     evidenceStrength: r.evidenceStrength,
     excludedByContraindication: r.excludedByContraindication,
     contraindicationReasons: r.contraindicationReasons,
-    confidence: buildCandidateConfidence(r.evidenceStrength, 1.0, 1.0)
+    confidence: buildCandidateConfidence(r.evidenceStrength, 1.0, 1.0),
+    ...(costByRegimenId.has(r.regimenId) ? { cost: costByRegimenId.get(r.regimenId)! } : {})
   }));
 
   // Also surface excluded regimens for full explainability (Section 6.4
@@ -88,7 +99,8 @@ export function runRecommendationGenerationModule(ctx: ModuleRunContext): Recomm
       evidenceStrength: r.evidenceStrength,
       excludedByContraindication: r.excludedByContraindication,
       contraindicationReasons: r.contraindicationReasons,
-      confidence: buildCandidateConfidence(r.evidenceStrength, 0, 1.0)
+      confidence: buildCandidateConfidence(r.evidenceStrength, 0, 1.0),
+      ...(costByRegimenId.has(r.regimenId) ? { cost: costByRegimenId.get(r.regimenId)! } : {})
     }));
 
   return {
@@ -104,7 +116,7 @@ export const recommendationGenerationModuleRegistration: ModuleRegistration<unde
   moduleId: "recommendation-generation-module",
   version: "1.0.0",
   domain: "clinical.nsclc",
-  declaredInputs: ["knowledge:RankedRegimen", "knowledge:GuidelineMatch"],
+  declaredInputs: ["knowledge:RankedRegimen", "knowledge:GuidelineMatch", "knowledge:RegimenCosts"],
   declaredOutputs: "output:Recommendation",
   confidenceProfile: ["evidenceStrength", "applicability", "sourceAgreement"],
   deterministic: true,

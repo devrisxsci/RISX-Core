@@ -3,6 +3,8 @@ import type { EvidencePackage } from "../types.js";
   import { COMPILED_NCCN_PACKAGE_DATA } from "./compiled/nccn-nsclc-package.js";
   import { COMPILED_FDA_PACKAGE_DATA } from "./compiled/fda-labels-package.js";
   import { COMPILED_BIOMARKER_PACKAGE_DATA } from "./compiled/biomarker-package.js";
+  import { COMPILED_DRUG_IDENTITY_PACKAGE_DATA } from "./compiled/drug-identity-package.js";
+  import { COMPILED_ECONOMIC_PACKAGE_DATA } from "./compiled/cms-economic-pricing-package.js";
 
   /**
    * Fixture Evidence Packages for the NSCLC Enterprise Knowledge Slice.
@@ -166,10 +168,42 @@ import type { EvidencePackage } from "../types.js";
   export const BIOMARKER_DEFINITIONS: EvidencePackage<unknown> =
     loadCompiledBiomarkerPackage(COMPILED_BIOMARKER_PACKAGE_DATA);
 
+  /**
+   * Stage 3 (DrugIdentity FINALE): Drug-Identity + CMS Economic Pricing —
+   * loaded from committed compiler artifacts produced by
+   * RISX-Knowledge-Compiler v1.0.0 (compilerId "risx-knowledge-compiler").
+   * Both carry genuine manifest hash trees. The Economic Cost Resolution
+   * Module reads these two packages to annotate ranked regimens with real CMS
+   * payment limits; missing prices are ABSENT, never fabricated.
+   */
+  function loadCompiledDrugIdentityPackage(raw: typeof COMPILED_DRUG_IDENTITY_PACKAGE_DATA): EvidencePackage<unknown> {
+    return {
+      manifest:   EvidencePackageManifestSchema.parse(raw.manifest),
+      source:     raw.source,
+      assertions: raw.assertions as EvidencePackage<unknown>["assertions"],
+    };
+  }
+
+  export const DRUG_IDENTITY_NSCLC: EvidencePackage<unknown> =
+    loadCompiledDrugIdentityPackage(COMPILED_DRUG_IDENTITY_PACKAGE_DATA);
+
+  function loadCompiledEconomicPackage(raw: typeof COMPILED_ECONOMIC_PACKAGE_DATA): EvidencePackage<unknown> {
+    return {
+      manifest:   EvidencePackageManifestSchema.parse(raw.manifest),
+      source:     raw.source,
+      assertions: raw.assertions as EvidencePackage<unknown>["assertions"],
+    };
+  }
+
+  export const CMS_ECONOMIC_PRICING_NSCLC: EvidencePackage<unknown> =
+    loadCompiledEconomicPackage(COMPILED_ECONOMIC_PACKAGE_DATA);
+
   export const ALL_FIXTURE_PACKAGES = [
     AJCC_STAGING_MANUAL,
     BIOMARKER_DEFINITIONS,
     NCCN_NSCLC_GUIDELINES,
     FDA_DRUG_LABELS,
+    DRUG_IDENTITY_NSCLC,
+    CMS_ECONOMIC_PRICING_NSCLC,
   ] as const;
   
