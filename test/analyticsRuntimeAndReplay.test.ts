@@ -23,10 +23,18 @@ describe("Analytics Runtime — end-to-end NSCLC clinical reasoning (Phase P2 Me
       "biomarker-interpretation-module",
       "guideline-matching-module",
       "regimen-selection-module",
+      "economic-cost-resolution-module",
       "recommendation-generation-module"
     ]);
     expect(audit.evidenceSnapshot.map((p) => p.packageId).sort()).toEqual(
-      ["ajcc-staging-manual", "biomarker-definitions", "fda-drug-labels-nsclc", "nccn-nsclc-guidelines"].sort()
+      [
+        "ajcc-staging-manual",
+        "biomarker-definitions",
+        "cms-economic-pricing-nsclc",
+        "drug-identity-nsclc",
+        "fda-drug-labels-nsclc",
+        "nccn-nsclc-guidelines",
+      ].sort()
     );
     expect(audit.resolvedConflicts).toHaveLength(0);
   });
@@ -133,6 +141,79 @@ describe("Audit & Replay Subsystem — deterministic replay (GR-28, GR-29, Secti
         }
       })
     ).toThrow(ReplayDivergenceError);
+  });
+});
+
+describe("Stage 3 — Economic cost resolution (DrugIdentity FINALE): real CMS costs, additive only", () => {
+  // No-actionable-driver path: an unmapped biomarker yields the
+  // carboplatin-pemetrexed-pembrolizumab regimen, whose three drugs all
+  // resolve to real CMS payment limits.
+  function noBiomarkerInputs() {
+    return egfrPositiveStageIVInputs().map((c) =>
+      c.id === "biomarker-result-1"
+        ? { ...c, payload: { diagnosisId: "diagnosis-1", assayId: "ngs-panel-1", rawResultCode: "UNKNOWN-MARKER-X", resultDateIso: "2026-06-02T00:00:00.000Z" } }
+        : c
+    );
+  }
+
+  it("resolves all three drugs of the no-biomarker regimen to real CMS costs and a correct additive total", () => {
+    const runtime = new AnalyticsRuntime();
+    const { clinicalResult } = runtime.execute({ canonicalInputs: noBiomarkerInputs(), executionContext: BASE_EXECUTION_CONTEXT });
+    const regimen = extractNsclcConclusion(clinicalResult).rankedRegimens.find(
+      (r) => r.regimenId === "carboplatin-pemetrexed-pembrolizumab"
+    );
+    expect(regimen?.cost).toBeDefined();
+    expect(regimen!.cost!.complete).toBe(true);
+    // 2_471_000 (J9045) + 4_355_000 (J9305) + 60_291_000 (J9271) = 67_117_000
+    expect(regimen!.cost!.totalMicroUsd).toBe(67_117_000);
+    const byTherapy = Object.fromEntries(regimen!.cost!.drugCosts.map((d) => [d.therapy, d]));
+    expect(byTherapy["carboplatin"]!.paymentLimitMicroUsd).toBe(2_471_000);
+    expect(byTherapy["carboplatin"]!.hcpcsCode).toBe("J9045");
+    expect(byTherapy["pemetrexed"]!.paymentLimitMicroUsd).toBe(4_355_000);
+    expect(byTherapy["pemetrexed"]!.hcpcsCode).toBe("J9305");
+    expect(byTherapy["pembrolizumab"]!.paymentLimitMicroUsd).toBe(60_291_000);
+    expect(byTherapy["pembrolizumab"]!.hcpcsCode).toBe("J9271");
+  });
+
+  it("carries real CMS provenance (pembrolizumab): rxcui → J9271 → CMS-ASP-2025Q4 payment limit", () => {
+    const runtime = new AnalyticsRuntime();
+    const { clinicalResult } = runtime.execute({ canonicalInputs: noBiomarkerInputs(), executionContext: BASE_EXECUTION_CONTEXT });
+    const regimen = extractNsclcConclusion(clinicalResult).rankedRegimens.find(
+      (r) => r.regimenId === "carboplatin-pemetrexed-pembrolizumab"
+    );
+    const pembro = regimen!.cost!.drugCosts.find((d) => d.therapy === "pembrolizumab")!;
+    expect(pembro.resolved).toBe(true);
+    expect(pembro.rxcui).toBe("1547545");
+    expect(pembro.hcpcsCode).toBe("J9271");
+    expect(pembro.source).toBe("CMS-ASP-2025Q4");
+    expect(pembro.effectiveDate).toBe("2025-10-01");
+    expect(pembro.effectiveThrough).toBe("2025-12-31");
+    expect(pembro.absenceReason).toBeNull();
+  });
+
+  it("osimertinib has NO CMS ASP price → ABSENT, never fabricated; its regimen total is null (partial)", () => {
+    const runtime = new AnalyticsRuntime();
+    const { clinicalResult } = runtime.execute({ canonicalInputs: egfrPositiveStageIVInputs(), executionContext: BASE_EXECUTION_CONTEXT });
+    const regimen = extractNsclcConclusion(clinicalResult).rankedRegimens.find(
+      (r) => r.regimenId === "osimertinib-monotherapy"
+    );
+    expect(regimen?.cost).toBeDefined();
+    const osi = regimen!.cost!.drugCosts.find((d) => d.therapy === "osimertinib")!;
+    expect(osi.resolved).toBe(false);
+    expect(osi.paymentLimitMicroUsd).toBeNull();
+    expect(osi.absenceReason).not.toBeNull();
+    expect(regimen!.cost!.complete).toBe(false);
+    expect(regimen!.cost!.totalMicroUsd).toBeNull();
+  });
+
+  it("cost annotation is additive only — ranking is identical with and without it (evidenceStrength decides order)", () => {
+    const runtime = new AnalyticsRuntime();
+    const { clinicalResult } = runtime.execute({ canonicalInputs: egfrPositiveStageIVInputs(), executionContext: BASE_EXECUTION_CONTEXT });
+    const order = extractNsclcConclusion(clinicalResult).rankedRegimens.map((r) => r.regimenId);
+    // EGFR-positive: osimertinib-monotherapy remains ranked first purely on
+    // NCCN evidence strength, even though it has NO resolvable cost while the
+    // (absent-here) chemo regimen would. Cost never reorders candidates.
+    expect(order[0]).toBe("osimertinib-monotherapy");
   });
 });
 

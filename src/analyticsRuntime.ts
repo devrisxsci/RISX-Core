@@ -12,6 +12,10 @@ import {
 import { guidelineMatchingModuleRegistration, type GuidelineMatchingOutput } from "./modules/guidelineMatching.js";
 import { regimenSelectionModuleRegistration, type RegimenSelectionOutput } from "./modules/regimenSelection.js";
 import {
+  economicCostResolutionModuleRegistration,
+  type EconomicCostResolutionOutput
+} from "./modules/economicCostResolution.js";
+import {
   recommendationGenerationModuleRegistration,
   type RecommendationGenerationOutput
 } from "./modules/recommendationGeneration.js";
@@ -64,6 +68,7 @@ const CLINICAL_MODULE_IDS = [
   "biomarker-interpretation-module",
   "guideline-matching-module",
   "regimen-selection-module",
+  "economic-cost-resolution-module",
   "recommendation-generation-module"
 ] as const;
 
@@ -73,6 +78,7 @@ export function buildClinicalRegistry(): ModuleRegistry {
   registry.register(biomarkerInterpretationModuleRegistration);
   registry.register(guidelineMatchingModuleRegistration);
   registry.register(regimenSelectionModuleRegistration);
+  registry.register(economicCostResolutionModuleRegistration);
   registry.register(recommendationGenerationModuleRegistration);
   return registry;
 }
@@ -124,6 +130,7 @@ export class AnalyticsRuntime {
     const biomarker = outputs.get("biomarker-interpretation-module") as BiomarkerInterpretationOutput;
     const guidelineMatching = outputs.get("guideline-matching-module") as GuidelineMatchingOutput;
     const regimenSelection = outputs.get("regimen-selection-module") as RegimenSelectionOutput;
+    const economicCostResolution = outputs.get("economic-cost-resolution-module") as EconomicCostResolutionOutput;
 
     const warnings: string[] = [...staging.warnings];
     if (biomarker.unclassified.length > 0) {
@@ -156,7 +163,9 @@ export class AnalyticsRuntime {
       staging.ajccPackageContentHash.digest,
       biomarker.biomarkerDefinitionsContentHash.digest,
       guidelineMatching.nccnPackageContentHash.digest,
-      regimenSelection.fdaLabelsPackageContentHash.digest
+      regimenSelection.fdaLabelsPackageContentHash.digest,
+      economicCostResolution.drugIdentityPackageContentHash.digest,
+      economicCostResolution.economicPackageContentHash.digest
     ];
 
     // Phase SEAL — hash the domain conclusion (NsclcRecommendationConclusion),

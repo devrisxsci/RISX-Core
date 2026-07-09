@@ -169,6 +169,41 @@ export interface EvidenceQueryHandle {
 //   C to make the envelope / conclusion split explicit.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Stage 3 (DrugIdentity FINALE) — economic cost annotation (Core-local).
+//
+// These are Core-local DOMAIN OUTPUT types, not governed claim shapes. The
+// governed claim shapes (`DrugIdentityClaim`, `CmsMedicareEconomicClaim`) live
+// in @risx/common and are imported directly by the Economic Cost Resolution
+// Module — there are no Core-local copies of them. The types below only
+// describe the shape of this Core module's own annotation output.
+//
+// Cost is ADDITIVE: it annotates candidates but never affects ranking. A drug
+// whose price cannot be resolved from real CMS data is ABSENT
+// (`paymentLimitMicroUsd: null`, `absenceReason` set) — never fabricated or
+// zero-filled. A regimen with any absent drug cost is `complete: false` with
+// `totalMicroUsd: null`.
+// ---------------------------------------------------------------------------
+
+export interface DrugCostResolution {
+  readonly therapy: string;
+  readonly resolved: boolean;
+  readonly rxcui: string | null;
+  readonly hcpcsCode: string | null;
+  readonly paymentLimitMicroUsd: number | null;
+  readonly source: string | null;
+  readonly effectiveDate: string | null;
+  readonly effectiveThrough: string | null;
+  readonly absenceReason: string | null;
+}
+
+export interface RegimenCostSummary {
+  readonly regimenId: string;
+  readonly drugCosts: ReadonlyArray<DrugCostResolution>;
+  readonly totalMicroUsd: number | null;
+  readonly complete: boolean;
+}
+
 export interface RegimenCandidate {
   readonly regimenId: string;
   readonly therapies: ReadonlyArray<string>;
@@ -177,6 +212,9 @@ export interface RegimenCandidate {
   readonly excludedByContraindication: boolean;
   readonly contraindicationReasons: ReadonlyArray<string>;
   readonly confidence: TypedConfidence;
+  // Stage 3: additive CMS cost annotation. Optional — present once the
+  // Economic Cost Resolution Module has run. Never influences ranking.
+  readonly cost?: RegimenCostSummary;
 }
 
 export interface NsclcRecommendationConclusion {
