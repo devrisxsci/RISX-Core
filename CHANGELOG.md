@@ -1,5 +1,31 @@
 # CHANGELOG
 
+  ## [Unreleased] — X-005 Policy versions conform to semver (2026-07-15)
+
+  ### BREAKING CHANGE to audit provenance (NOT to clinical reasoning)
+
+  ExecutionContext policy versions are now semantic versions, as Common's
+  AuditObjectSchema has required since Core pinned RISX-Common v2.0
+  (SemanticVersionSchema on precedencePolicyVersion and
+  confidencePolicyVersion). Core had failed its own pinned contract since
+  Stage C; X-003's AuditObjectSchema.parse() exposed it, and this change
+  closes it (PO decision: Option A — Core conforms, Common stays frozen).
+
+  **What changed:**
+
+  | Field | Before | After |
+  |---|---|---|
+  | `precedencePolicyVersion` | `precedence-v0-single-domain` | `0.1.0-single-domain` |
+  | `confidencePolicyVersion` | `provisional-unweighted-mean-v0-pending-ADR-0002` | `0.1.0-provisional-unweighted-mean.pending-adr-0002` |
+
+  **Audit hashes that changed (all NSCLC runs):** `audit.id` is sha256Hex over
+  an object that includes the whole executionContext (auditReplay.ts), so
+  audit ids change for EVERY execution. Replay recomputes both sides, so
+  bit-for-bit replay (GR-29) must still pass. Clinical conclusions and
+  ranking are UNCHANGED — no module logic, evidence, or reasoning was touched.
+  The prerelease fields carry the full original policy semantics; ADR-0002
+  remains open (the confidence aggregation rule is versioned, not decided).
+
   ## [Unreleased] — AR1 Step 2 (2026-07-07)
 
   ### BREAKING CHANGE to audit provenance (NOT to clinical reasoning)

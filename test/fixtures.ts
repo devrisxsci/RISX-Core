@@ -1,12 +1,31 @@
 import type { ExecutionContext } from "../src/types.js";
 import type { CanonicalObjectType } from "../src/canonicalInputGateway.js";
 
+// Policy version identifiers — semantic versions, conforming to Common's
+// AuditObjectSchema (SemanticVersionSchema on precedencePolicyVersion and
+// confidencePolicyVersion, audit-object.ts:84/:86). The sealed value
+// identifies the version; these constants and comments document what each
+// version MEANS. AuditObject is strict (additionalProperties:false) — the
+// description cannot travel inside it and is deliberately kept out.
+
+// 0.1.0-single-domain — single-domain precedence ordering: only one evidence
+// domain is consulted per decision point, so no cross-domain precedence
+// arbitration is performed. 0.x.y signals a provisional/unstable policy.
+export const PRECEDENCE_POLICY_VERSION = "0.1.0-single-domain";
+
+// 0.1.0-provisional-unweighted-mean.pending-adr-0002 — unweighted-mean
+// confidence aggregation. The final aggregation rule remains OPEN, deferred
+// to ADR-0002 Part B; this versions the policy without deciding it. The
+// prerelease field carries the full original semantics.
+export const CONFIDENCE_POLICY_VERSION =
+  "0.1.0-provisional-unweighted-mean.pending-adr-0002";
+
 export const BASE_EXECUTION_CONTEXT: ExecutionContext = {
   injectedTimeIso: "2026-07-06T00:00:00.000Z",
   randomSeed: "test-seed-0001",
   tenantId: "test-tenant",
-  precedencePolicyVersion: "precedence-v0-single-domain",
-  confidencePolicyVersion: "provisional-unweighted-mean-v0-pending-ADR-0002",
+  precedencePolicyVersion: PRECEDENCE_POLICY_VERSION,
+  confidencePolicyVersion: CONFIDENCE_POLICY_VERSION,
   intendedUsePosture: "clinical-decision-support-eligible"
 };
 
