@@ -1,6 +1,6 @@
 import type { AuditObject, ClinicalResult, RecommendationObject, TypedConfidence, IntendedUse, NsclcRecommendationConclusion } from "./types.js";
 import type { EvidenceSnapshot, ExecutionContext } from "./types.js";
-import { computeContentHash } from "@risx/common";
+import { AuditObjectSchema, computeContentHash } from "@risx/common";
 import { sha256Hex } from "./hash.js";
 
 /**
@@ -98,7 +98,7 @@ export function sealAuditObject(args: SealArgs): AuditObject {
     confidenceHash
   });
 
-  return {
+  const auditObject: AuditObject = {
     id,
     objectType: "AuditObject",
     schemaVersion: AUDIT_SCHEMA_VERSION,
@@ -120,6 +120,8 @@ export function sealAuditObject(args: SealArgs): AuditObject {
       confidenceHash
     }
   };
+
+  return AuditObjectSchema.parse(auditObject);
 }
 
 /**
